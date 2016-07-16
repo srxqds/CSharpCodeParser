@@ -16,9 +16,9 @@ namespace CSharpCodeParser
 			Preprocessor,
 			PreprocessorArguments,
 			PreprocessorSymbol,
-			PreprocessorDirectiveExpected,
-			PreprocessorCommentExpected,
-			PreprocessorUnexpectedDirective,
+			//PreprocessorDirectiveExpected,
+			//PreprocessorCommentExpected,
+			//PreprocessorUnexpectedDirective,
 			VerbatimStringLiteral,
 			
 			LastWSToken, // Marker only
@@ -37,9 +37,9 @@ namespace CSharpCodeParser
 		}
 		
 		public Kind tokenKind;
-		public GUIStyle style;
+		//public GUIStyle style;
 		public ParseTree.Leaf parent;
-		//public TextSpan textSpan;
+		public TextSpan textSpan;
 		public string text;
 		public int tokenId;
 		
@@ -59,7 +59,7 @@ namespace CSharpCodeParser
 			tokenKind = kind;
 			this.text = string.Intern(text);
 			tokenId = -1;
-			style = null;
+			//style = null;
 		}
 		
 		public bool IsMissing()

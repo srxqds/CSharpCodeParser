@@ -7,13 +7,8 @@ namespace CSharpCodeParser
 {
 	public class CsParser
 	{
+		public static string[] BuiltInLiterals { get { return scriptLiterals; } }
 
-
-		public string[] BuiltInLiterals { get { return scriptLiterals; } }
-		protected static readonly string[] scriptLiterals = new string[] { "false", "null", "true", };
-		//micro defines
-		public HashSet<string> scriptDefines = new HashSet<string>();
-		public bool scriptDefinesChanged;
 
 		public static bool IsWhitespace(char word)
 		{
@@ -34,7 +29,13 @@ namespace CSharpCodeParser
 		{
 			return operators.Contains(text);
 		}
+		
+		public HashSet<string> scriptDefines = new HashSet<string>();
+		
+		public bool scriptDefinesChanged;
 
+		protected static readonly string[] scriptLiterals = new string[] { "false", "null", "true", };
+	
 		private static readonly char[] whitespaces = { ' ', '\t' };
 		
 		private static readonly string[] keywords = new string[] {
@@ -68,6 +69,13 @@ namespace CSharpCodeParser
 			"bool", "byte", "char", "decimal", "double", "float", "int", "long", "object", "sbyte", "short",
 			"string", "uint", "ulong", "ushort", "void"
 		};
+		# region gdsfs //sdfsdf
+		#endregion
+#if Debug //comment
+#else //comment
+#endif
+		#region "Test"
+		#endregion "Test"
 
 		public void Tokenize(string line,CsTextBuffer.FormatedLine formatedLine)
 		{
@@ -104,10 +112,6 @@ namespace CSharpCodeParser
 				token = ScanWord(line, ref startAt);
 				if (Array.BinarySearch(preprocessorKeywords, token.text) < 0)
 				{
-					token.tokenKind = SyntaxToken.Kind.PreprocessorDirectiveExpected;
-					tokens.Add(token);
-					token.formatedLine = formatedLine;
-					
 					error = true;
 				}
 				else
@@ -125,112 +129,34 @@ namespace CSharpCodeParser
 					
 					if (token.text == "if")
 					{
-						bool active = ParsePPOrExpression(line, formatedLine, ref startAt);
-						bool inactiveParent = formatedLine.regionTree.kind > CsTextBuffer.RegionTree.Kind.LastActive;
-						if (active && !inactiveParent)
-						{
-							OpenRegion(formatedLine, CsTextBuffer.RegionTree.Kind.If);
-							commentsOnly = true;
-						}
-						else
-						{
-							OpenRegion(formatedLine, CsTextBuffer.RegionTree.Kind.InactiveIf);
-							commentsOnly = true;
-						}
+						ParsePPOrExpression(line, formatedLine, ref startAt);
+						commentsOnly = true;
+
 					}
 					else if (token.text == "elif")
 					{
-						bool active = ParsePPOrExpression(line, formatedLine, ref startAt);
-						bool inactiveParent = formatedLine.regionTree.kind > CsTextBuffer.RegionTree.Kind.LastActive;
-						if (formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.If ||
-						    formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.Elif ||
-						    formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.InactiveElif)
-						{
-							OpenRegion(formatedLine, CsTextBuffer.RegionTree.Kind.InactiveElif);
-						}
-						else if (formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.InactiveIf)
-						{
-							inactiveParent = formatedLine.regionTree.parent.kind > CsTextBuffer.RegionTree.Kind.LastActive;
-							if (active && !inactiveParent)
-							{
-								OpenRegion(formatedLine, CsTextBuffer.RegionTree.Kind.Elif);
-							}
-							else
-							{
-								OpenRegion(formatedLine, CsTextBuffer.RegionTree.Kind.InactiveElif);
-							}
-						}
-						else
-						{
-							token.tokenKind = SyntaxToken.Kind.PreprocessorUnexpectedDirective;
-						}
+						ParsePPOrExpression(line, formatedLine, ref startAt);
+						commentsOnly = true;
 					}
 					else if (token.text == "else")
 					{
-						if (formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.If ||
-						    formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.Elif)
-						{
-							OpenRegion(formatedLine, CsTextBuffer.RegionTree.Kind.InactiveElse);
-						}
-						else if (formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.InactiveIf ||
-						         formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.InactiveElif)
-						{
-							bool inactiveParent = formatedLine.regionTree.parent.kind > CsTextBuffer.RegionTree.Kind.LastActive;
-							if (inactiveParent)
-								OpenRegion(formatedLine, CsTextBuffer.RegionTree.Kind.InactiveElse);
-							else
-								OpenRegion(formatedLine, CsTextBuffer.RegionTree.Kind.Else);
-						}
-						else
-						{
-							token.tokenKind = SyntaxToken.Kind.PreprocessorUnexpectedDirective;
-						}
+						commentsOnly = true;
 					}
 					else if (token.text == "endif")
 					{
-						if (formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.If ||
-						    formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.Elif ||
-						    formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.Else ||
-						    formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.InactiveIf ||
-						    formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.InactiveElif ||
-						    formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.InactiveElse)
-						{
-							CloseRegion(formatedLine);
-						}
-						else
-						{
-							token.tokenKind = SyntaxToken.Kind.PreprocessorUnexpectedDirective;
-						}
+						commentsOnly = true;
 					}
-					else if (token.text == "region")
+					else if (token.text == "region")  //region Tag
 					{
-						var inactive = formatedLine.regionTree.kind > CsTextBuffer.RegionTree.Kind.LastActive;
-						if (inactive)
-						{
-							OpenRegion(formatedLine, CsTextBuffer.RegionTree.Kind.InactiveRegion);
-						}
-						else
-						{
-							OpenRegion(formatedLine, CsTextBuffer.RegionTree.Kind.Region);
-						}
 						preprocessorCommentsAllowed = false;
 					}
 					else if (token.text == "endregion")
 					{
-						if (formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.Region ||
-						    formatedLine.regionTree.kind == CsTextBuffer.RegionTree.Kind.InactiveRegion)
-						{
-							CloseRegion(formatedLine);
-						}
-						else
-						{
-							token.tokenKind = SyntaxToken.Kind.PreprocessorUnexpectedDirective;
-						}
 						preprocessorCommentsAllowed = false;
 					}
 					else if (token.text == "define" || token.text == "undef")
 					{
-						var symbol = CsParser.ScanIdentifierOrKeyword(line, ref startAt);
+						var symbol = ScanIdentifierOrKeyword(line, ref startAt);
 						if (symbol != null && symbol.text != "true" && symbol.text != "false")
 						{
 							symbol.tokenKind = SyntaxToken.Kind.PreprocessorSymbol;
@@ -238,29 +164,9 @@ namespace CSharpCodeParser
 							symbol.formatedLine = formatedLine;
 							
 							scriptDefinesChanged = true;
-							
-							var inactive = formatedLine.regionTree.kind > CsTextBuffer.RegionTree.Kind.LastActive;
-							if (!inactive)
-							{
-								if (token.text == "define")
-								{
-									if (!scriptDefines.Contains(symbol.text))
-									{
-										scriptDefines.Add(symbol.text);
-										//scriptDefinesChanged = true;
-									}
-								}
-								else
-								{
-									if (scriptDefines.Contains(symbol.text))
-									{
-										scriptDefines.Remove(symbol.text);
-										//scriptDefinesChanged = true;
-									}
-								}
-							}
 						}
 					}
+					//what syntax?
 					else if (token.text == "error" || token.text == "warning")
 					{
 						preprocessorCommentsAllowed = false;
@@ -281,6 +187,7 @@ namespace CSharpCodeParser
 						textArgument.TrimEnd(new [] {' ', '\t'});
 						tokens.Add(new SyntaxToken(SyntaxToken.Kind.PreprocessorArguments, textArgument) { formatedLine = formatedLine });
 						startAt = length - textArgument.Length;
+						//bug?
 						if (startAt < length)
 							tokens.Add(new SyntaxToken(SyntaxToken.Kind.Whitespace, line.Substring(startAt)) { formatedLine = formatedLine });
 					}
@@ -305,10 +212,11 @@ namespace CSharpCodeParser
 					}
 					else if (commentsOnly)
 					{
-						tokens.Add(new SyntaxToken(SyntaxToken.Kind.PreprocessorCommentExpected, line.Substring(startAt)) { formatedLine = formatedLine });
+						error = true;
+						//tokens.Add(new SyntaxToken(SyntaxToken.Kind.PreprocessorCommentExpected, line.Substring(startAt)) { formatedLine = formatedLine });
 						break;						
 					}
-					
+					//? why
 					if (char.IsLetterOrDigit(firstChar) || firstChar == '_')
 					{
 						token = ScanWord(line, ref startAt);
@@ -339,14 +247,14 @@ namespace CSharpCodeParser
 					
 					if (error)
 					{
-						token.tokenKind = SyntaxToken.Kind.PreprocessorDirectiveExpected;
+						//token.tokenKind = SyntaxToken.Kind.PreprocessorDirectiveExpected;
 					}
 				}
 				
 				return;
 			}
 			
-			var inactiveLine = formatedLine.regionTree.kind > CsTextBuffer.RegionTree.Kind.LastActive;
+			//var inactiveLine = false;//formatedLine.regionTree.kind > CsTextBuffer.RegionTree.Kind.LastActive;
 			
 			while (startAt < length)
 			{
@@ -360,13 +268,13 @@ namespace CSharpCodeParser
 						ws.formatedLine = formatedLine;
 						continue;
 					}
-					
-					if (inactiveLine)
+					//?
+					/*if (inactiveLine)
 					{
 						tokens.Add(new SyntaxToken(SyntaxToken.Kind.Comment, line.Substring(startAt)) { formatedLine = formatedLine });
 						startAt = length;
 						break;
-					}
+					}*/
 					
 					if (line[startAt] == '/' && startAt < length - 1)
 					{
@@ -421,7 +329,7 @@ namespace CSharpCodeParser
 						break;
 					}
 					
-					token = ScanIdentifierOrKeyword1(line, ref startAt);
+					token = ScanIdentifierOrKeyword(line, ref startAt);
 					if (token != null)
 					{
 						tokens.Add(token);
@@ -437,62 +345,62 @@ namespace CSharpCodeParser
 					{
 						switch (line[punctuatorStart])
 						{
-						case '?':
-							if (line[startAt] == '?')
-								++startAt;
-							break;
-						case '+':
-							if (line[startAt] == '+' || line[startAt] == '=')
-								++startAt;
-							break;
-						case '-':
-							if (line[startAt] == '-' || line[startAt] == '=')
-								++startAt;
-							break;
-						case '<':
-							if (line[startAt] == '=')
-								++startAt;
-							else if (line[startAt] == '<')
-							{
-								++startAt;
-								if (startAt < line.Length && line[startAt] == '=')
+							case '?':
+								if (line[startAt] == '?')
 									++startAt;
-							}
-							break;
-						case '>':
-							if (line[startAt] == '=')
-								++startAt;
-							//else if (startAt < line.Length && line[startAt] == '>')
-							//{
-							//    ++startAt;
-							//    if (line[startAt] == '=')
-							//        ++startAt;
-							//}
-							break;
-						case '=':
-							if (line[startAt] == '=' || line[startAt] == '>')
-								++startAt;
-							break;
-						case '&':
-							if (line[startAt] == '=' || line[startAt] == '&')
-								++startAt;
-							break;
-						case '|':
-							if (line[startAt] == '=' || line[startAt] == '|')
-								++startAt;
-							break;
-						case '*':
-						case '/':
-						case '%':
-						case '^':
-						case '!':
-							if (line[startAt] == '=')
-								++startAt;
-							break;
-						case ':':
-							if (line[startAt] == ':')
-								++startAt;
-							break;
+								break;
+							case '+':
+								if (line[startAt] == '+' || line[startAt] == '=')
+									++startAt;
+								break;
+							case '-':
+								if (line[startAt] == '-' || line[startAt] == '=')
+									++startAt;
+								break;
+							case '<':
+								if (line[startAt] == '=')
+									++startAt;
+								else if (line[startAt] == '<')
+								{
+									++startAt;
+									if (startAt < line.Length && line[startAt] == '=')
+										++startAt;
+								}
+								break;
+							case '>':
+								if (line[startAt] == '=')
+									++startAt;
+								//else if (startAt < line.Length && line[startAt] == '>')
+								//{
+								//    ++startAt;
+								//    if (line[startAt] == '=')
+								//        ++startAt;
+								//}
+								break;
+							case '=':
+								if (line[startAt] == '=' || line[startAt] == '>')
+									++startAt;
+								break;
+							case '&':
+								if (line[startAt] == '=' || line[startAt] == '&')
+									++startAt;
+								break;
+							case '|':
+								if (line[startAt] == '=' || line[startAt] == '|')
+									++startAt;
+								break;
+							case '*':
+							case '/':
+							case '%':
+							case '^':
+							case '!':
+								if (line[startAt] == '=')
+									++startAt;
+								break;
+							case ':':
+								if (line[startAt] == ':')
+									++startAt;
+								break;
 						}
 					}
 					tokens.Add(new SyntaxToken(SyntaxToken.Kind.Punctuator, line.Substring(punctuatorStart, startAt - punctuatorStart)) { formatedLine = formatedLine });
@@ -538,14 +446,7 @@ namespace CSharpCodeParser
 				}
 			}
 		}
-		
-		private SyntaxToken ScanIdentifierOrKeyword1(string line, ref int startAt)
-		{
-			var token = CsParser.ScanIdentifierOrKeyword(line, ref startAt);
-			if (token != null && token.tokenKind == SyntaxToken.Kind.Keyword && !IsKeyword(token.text) && !IsBuiltInType(token.text))
-				token.tokenKind = SyntaxToken.Kind.Identifier;
-			return token;
-		}
+
 
 	
 		protected static SyntaxToken ScanWhitespace(string line, ref int startAt)
@@ -797,6 +698,9 @@ namespace CSharpCodeParser
 			
 			var word = line.Substring(startAt, i - startAt);
 			startAt = i;
+
+			if (!identifier && !IsKeyword(word) && !IsBuiltInType(word))
+				identifier = true;
 			return new SyntaxToken(identifier ? SyntaxToken.Kind.Identifier : SyntaxToken.Kind.Keyword, word);
 		}
 		
@@ -1025,7 +929,7 @@ namespace CSharpCodeParser
 		
 		protected bool ParsePPSymbol(string line, CsTextBuffer.FormatedLine formatedLine, ref int startAt)
 		{
-			var word = CsParser.ScanIdentifierOrKeyword(line, ref startAt);
+			var word = ScanIdentifierOrKeyword(line, ref startAt);
 			if (word == null)
 				return true;
 			
@@ -1049,52 +953,7 @@ namespace CSharpCodeParser
 			return isDefined;
 		}
 		
-		protected void OpenRegion(CsTextBuffer.FormatedLine formatedLine, CsTextBuffer.RegionTree.Kind regionKind)
-		{
-			var parentRegion = formatedLine.regionTree;
-			CsTextBuffer.RegionTree reuseRegion = null;
-			
-			switch (regionKind)
-			{
-			case CsTextBuffer.RegionTree.Kind.Else:
-			case CsTextBuffer.RegionTree.Kind.Elif:
-			case CsTextBuffer.RegionTree.Kind.InactiveElse:
-			case CsTextBuffer.RegionTree.Kind.InactiveElif:
-				parentRegion = parentRegion.parent;
-				break;
-			}
-			
-			if (parentRegion.children != null)
-			{
-				reuseRegion = parentRegion.children.Find(x => x.line == formatedLine);
-			}
-			if (reuseRegion != null)
-			{
-				if (reuseRegion.kind == regionKind)
-				{
-					formatedLine.regionTree = reuseRegion;
-					return;
-				}
-				
-				reuseRegion.parent = null;
-				parentRegion.children.Remove(reuseRegion);
-			}
-			
-			formatedLine.regionTree = new CsTextBuffer.RegionTree {
-				parent = parentRegion,
-				kind = regionKind,
-				line = formatedLine,
-			};
-			
-			if (parentRegion.children == null)
-				parentRegion.children = new List<CsTextBuffer.RegionTree>();
-			parentRegion.children.Add(formatedLine.regionTree);
-		}
-		
-		protected void CloseRegion(CsTextBuffer.FormatedLine formatedLine)
-		{
-			formatedLine.regionTree = formatedLine.regionTree.parent;
-		}
+
 	}
 
 

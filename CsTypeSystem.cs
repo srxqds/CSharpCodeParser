@@ -7229,8 +7229,8 @@ public class SymbolDefinition
 		var unityName = UnityHelpName;
 		if (unityName != null)
 		{
-			if (UnitySymbols.summaries.TryGetValue(unityName, out result))
-				return result;
+			//if (UnitySymbols.summaries.TryGetValue(unityName, out result))
+				//return result;
 			//Debug.Log(unityName);
 			return null;
 		}
@@ -7853,11 +7853,11 @@ public class SymbolDefinition
 
 		if (scope == null)
 		{
-			var scopeNode = CsGrammar.EnclosingSemanticNode(baseNode, SemanticFlags.ScopesMask);
+			/*var scopeNode = CsGrammar.EnclosingSemanticNode(baseNode, SemanticFlags.ScopesMask);
 			while (scopeNode != null && scopeNode.scope == null && scopeNode.parent != null)
 				scopeNode = CsGrammar.EnclosingSemanticNode(scopeNode.parent, SemanticFlags.ScopesMask);
 			if (scopeNode != null)
-				scope = scopeNode.scope;
+				scope = scopeNode.scope;*/
 		}
 
 		var leaf = baseNode as ParseTree.Leaf;
@@ -7944,9 +7944,9 @@ public class SymbolDefinition
 					case SyntaxToken.Kind.Keyword:
 						if (leaf.token.text == "this" || leaf.token.text == "base")
 						{
-							var scopeNode = CsGrammar.EnclosingScopeNode(leaf.parent,
-								SemanticFlags.MethodBodyScope,
-								SemanticFlags.AccessorBodyScope);//,
+                           Scope scopeNode = null;//CsGrammar.EnclosingScopeNode(leaf.parent,
+								//SemanticFlags.MethodBodyScope,
+								//SemanticFlags.AccessorBodyScope);//,
 								//SemanticFlags.LambdaExpressionBodyScope,
 								//SemanticFlags.AnonymousMethodBodyScope);
 							if (scopeNode == null)
@@ -7974,7 +7974,7 @@ public class SymbolDefinition
 								break;
 							}
 
-							var memberScope = scopeNode.scope as BodyScope;
+						    BodyScope memberScope = null;//scopeNode.scope as BodyScope;
 							if (memberScope != null && memberScope.definition.IsStatic)
 							{
 								if (leaf.token.text == "base")
@@ -7984,14 +7984,14 @@ public class SymbolDefinition
 								break;
 							}
 
-							scopeNode = CsGrammar.EnclosingScopeNode(scopeNode, SemanticFlags.TypeDeclarationScope);
+							//scopeNode = CsGrammar.EnclosingScopeNode(scopeNode, SemanticFlags.TypeDeclarationScope);
 							if (scopeNode == null)
 							{
 								leaf.resolvedSymbol = unknownSymbol;
 								break;
 							}
 
-							var thisType = ((SymbolDeclarationScope) scopeNode.scope).declaration.definition as TypeDefinitionBase;
+                            TypeDefinitionBase thisType = null;//((SymbolDeclarationScope) scopeNode.scope).declaration.definition as TypeDefinitionBase;
 							if (thisType != null && leaf.token.text == "base")
 								thisType = thisType.BaseType();
 							if (thisType != null && (thisType.kind == SymbolKind.Struct || thisType.kind == SymbolKind.Class))
