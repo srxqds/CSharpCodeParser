@@ -68,56 +68,7 @@ namespace CSharpCodeParser
 				return hash;
 			}
 		}
-		
-		/*public bool Move(FGTextBuffer textBuffer, int offset)
-		{
-			while (offset > 0)
-			{
-				var lineLength = textBuffer.lines[line].Length;
-				if (index + offset <= lineLength)
-				{
-					index += offset;
-					if (index == lineLength)
-					{
-						index = 0;
-						++line;
-					}
-					return true;
-				}
-				
-				offset -= lineLength - index;
-				++line;
-				index = 0;
-				
-				if (line >= textBuffer.lines.Count)
-				{
-					line = textBuffer.lines.Count;
-					index = 0;
-					return false;
-				}
-			}
-			
-			while (offset < 0)
-			{
-				if (index + offset >= 0)
-				{
-					index += offset;
-					return true;
-				}
-				
-				offset += index;
-				--line;
-				if (line < 0)
-				{
-					line = 0;
-					index = 0;
-					return false;
-				}
-				index = textBuffer.lines[line].Length;
-			}
-			
-			return true;
-		}*/
+
 		
 		public override string ToString()
 		{

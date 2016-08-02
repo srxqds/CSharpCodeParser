@@ -12,17 +12,17 @@ namespace CSharpCodeParser
 
 		public static bool IsWhitespace(char word)
 		{
-			return Array.BinarySearch(whitespaces, word, StringComparer.Ordinal) >= 0;
+			return Array.IndexOf(whitespaces, word) != -1;
 		}
 
 		public static bool IsBuiltInType(string word)
 		{
-			return Array.BinarySearch(builtInTypes, word, StringComparer.Ordinal) >= 0;
+			return Array.IndexOf(builtInTypes, word) != -1;
 		}
 
 		public static bool IsKeyword(string word)
 		{
-			return Array.BinarySearch(keywords, word, StringComparer.Ordinal) >= 0;
+			return Array.BinarySearch(keywords, word) != -1;
 		}
 		
 		public static bool IsOperator(string text)
@@ -47,14 +47,7 @@ namespace CSharpCodeParser
 			"struct", "switch", "this", "throw", "try", "typeof", "unchecked", "unsafe", "using", "virtual",
 			"volatile", "while"
 		};
-		
-		//private static readonly string[] csPunctsAndOps = {
-		//	"{", "}", ";", "#", ".", "(", ")", "[", "]", "++", "--", "->", "+", "-",
-		//	"!", "~", "++", "--", "&", "*", "/", "%", "+", "-", "<<", ">>", "<", ">",
-		//	"<=", ">=", "==", "!=", "&", "^", "|", "&&", "||", "??", "?", "::", ":",
-		//	"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=", "=>"
-		//};
-		
+
 		private static readonly HashSet<string> operators = new HashSet<string>{
 			"++", "--", "->", "+", "-", "!", "~", "++", "--", "&", "*", "/", "%", "+", "-", "<<", ">>", "<", ">",
 			"<=", ">=", "==", "!=", "&", "^", "|", "&&", "||", "??", "?", "::", ":",
@@ -69,13 +62,6 @@ namespace CSharpCodeParser
 			"bool", "byte", "char", "decimal", "double", "float", "int", "long", "object", "sbyte", "short",
 			"string", "uint", "ulong", "ushort", "void"
 		};
-		# region gdsfs //sdfsdf
-		#endregion
-#if Debug //comment
-#else //comment
-#endif
-		#region "Test"
-		#endregion "Test"
 
 		public void Tokenize(string line,CsTextBuffer.FormatedLine formatedLine)
 		{

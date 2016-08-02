@@ -37,7 +37,6 @@ namespace CSharpCodeParser
 		}
 		
 		public Kind tokenKind;
-		//public GUIStyle style;
 		public ParseTree.Leaf parent;
 		public TextSpan textSpan;
 		public string text;
@@ -45,14 +44,12 @@ namespace CSharpCodeParser
 		
 		public CsTextBuffer.FormatedLine formatedLine;
 		
-		public int Line { get { return formatedLine.index; } }
+		public int Line { get { 
+				if(formatedLine != null)
+					return formatedLine.index;
+				return -1;} }
 		public int TokenIndex { get { return formatedLine.tokens.IndexOf(this); } }
-		
-		public static SyntaxToken CreateMissing()
-		{
-			return new SyntaxToken(Kind.Missing, string.Empty) { parent = null };
-		}
-		
+
 		public SyntaxToken(Kind kind, string text)
 		{
 			parent = null;
@@ -62,19 +59,10 @@ namespace CSharpCodeParser
 			//style = null;
 		}
 		
-		public bool IsMissing()
-		{
-			return tokenKind == Kind.Missing;
-		}
-		
 		public override string ToString() { return tokenKind +"(\"" + text + "\")"; }
 		
 		public string Dump() { return "[Token: " + tokenKind + " \"" + text + "\"]"; }
 		
-		//	public int CompareTo(SyntaxToken other)
-		//	{
-		//		var t = tokenKind.GetHashCode().CompareTo(tokenKind.GetHashCode());
-		//		return t != 0 ? t : text.CompareTo(other.text);
-		//	}
+
 	}
 }

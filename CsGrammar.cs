@@ -10,844 +10,8 @@ namespace CSharpCodeParser
 {
 
 
-	public interface IVisitableTreeNode<NonLeaf, Leaf>
-	{
-		bool Accept(IHierarchicalVisitor<NonLeaf, Leaf> visitor);
-	}
-	
-	public interface IHierarchicalVisitor<NonLeaf, Leaf>
-	{
-		bool Visit(Leaf leafNode);
-		bool VisitEnter(NonLeaf nonLeafNode);
-		bool VisitLeave(NonLeaf nonLeafNode);
-	}
-	public class ParseTree
-	{
-		public static uint resolverVersion = 2;
 
-		public abstract class BaseNode : IVisitableTreeNode<Node, Leaf>
-		{
-			public Node parent;
-			public int childIndex;
-			public CsGrammar.Node grammarNode;
-			public bool missing;
-			public string syntaxError;
-			public string semanticError;
-			
-			private uint _resolvedVersion = 1;
-			private SymbolDefinition _resolvedSymbol;
-			public SymbolDefinition resolvedSymbol 
-			{
-				get {
-					if (_resolvedSymbol != null && _resolvedVersion != 0 &&
-					    (_resolvedVersion != resolverVersion || !_resolvedSymbol.IsValid())
-					    )
-						_resolvedSymbol = null;
-					return _resolvedSymbol;
-				}
-				set {
-					if (_resolvedVersion == 0)
-					{
-						//Debug.LogWarning("Whoops!");
-						return;
-					}
-					_resolvedVersion = resolverVersion;
-					_resolvedSymbol = value;
-				}
-			}
-			
-			public void SetDeclaredSymbol(SymbolDefinition symbol)
-			{
-				_resolvedSymbol = symbol;
-				_resolvedVersion = 0;
-			}
-			
-			public abstract bool Accept(IHierarchicalVisitor<Node, Leaf> visitor);
-			
-			public int Depth
-			{
-				get
-				{
-					var d = 0;
-					for (var p = parent; p != null; p = p.parent)
-						++d;
-					return d;
-				}
-			}
-			
-			public BaseNode CommonParent(BaseNode other)
-			{
-				if (this == other)
-					return this;
-				var d = Depth;
-				var d1 = other.Depth;
-				var n = this;
-				while (d < d1)
-					other = other.parent;
-				while (d > d1)
-					n = n.parent;
-				while (n != other)
-				{
-					n = n.parent;
-					other = other.parent;
-				}
-				return n;
-			}
-			
-			public Leaf FindPreviousLeaf()
-			{
-				var result = this;
-				while (result.childIndex == 0 && result.parent != null)
-					result = result.parent;
-				if (result.parent == null)
-					return null;
-				result = result.parent.ChildAt(result.childIndex - 1);
-				Node node;
-				while ((node = result as Node) != null)
-				{
-					if (node.numValidNodes == 0)
-						return node.FindPreviousLeaf();
-					result = node.ChildAt(node.numValidNodes - 1);
-				}
-				return result as Leaf;
-			}
-			
-			public Leaf FindNextLeaf()
-			{
-				var result = this;
-				while (result.parent != null && result.childIndex == result.parent.numValidNodes - 1)
-					result = result.parent;
-				if (result.parent == null)
-					return null;
-				result = result.parent.ChildAt(result.childIndex + 1);
-				Node node;
-				while ((node = result as Node) != null)
-				{
-					if (node.numValidNodes == 0)
-						return node.FindNextLeaf();
-					result = node.ChildAt(0);
-				}
-				return result as Leaf;
-			}
-			
-			public BaseNode FindPreviousNode()
-			{
-				var result = this;
-				while (result.childIndex == 0 && result.parent != null)
-					result = result.parent;
-				if (result.parent == null)
-					return null;
-				result = result.parent.ChildAt(result.childIndex - 1);
-				return result;
-			}
-			
-			public abstract void Dump(StringBuilder sb, int indent);
-			
-			public bool IsAncestorOf(BaseNode node)
-			{
-				while (node != null)
-					if (node.parent == this)
-						return true;
-				else
-					node = node.parent;
-				return false;
-			}
-			
-			public Node FindParentByName(string ruleName)
-			{
-				var result = parent;
-				while (result != null && result.RuleName != ruleName)
-					result = result.parent;
-				return result;
-			}
-			
-			public override string ToString()
-			{
-				var sb = new StringBuilder();
-				Dump(sb, 1);
-				return sb.ToString();
-			}
-			
-			//	public abstract void RemoveToken();
-			
-			public abstract string Print();
-			
-			public abstract bool HasLeafs(bool validNodesOnly = true);
-			
-			public abstract bool HasErrors(bool validNodesOnly = true);
-			
-			public abstract bool IsLit(string litText);
-		}
-		
-		public class Leaf : BaseNode
-		{
-			public int line {
-				get {
-					return token != null ? token.Line : 0;
-				}
-			}
-			public int tokenIndex {
-				get {
-					return token != null ? token.formatedLine.tokens.IndexOf(token) : 0;
-				}
-			}
-			public SyntaxToken token;
-			
-			public Leaf() {}
-			
-			public Leaf(CsGrammar.IScanner scanner)
-			{
-				//line = scanner.CurrentLine() - 1;
-				//tokenIndex = scanner.CurrentTokenIndex();
-				token = scanner.Current;
-				token.parent = this;
-			}
-			
-			public bool TryReuse(CsGrammar.IScanner scanner)
-			{
-				if (token == null)
-					return false;
-				var current = scanner.Current;
-				if (current.parent == this)//token.text == current.text && token.tokenKind == current.tokenKind)
-				{
-					//	line = scanner.CurrentLine() - 1;
-					//	tokenIndex = scanner.CurrentTokenIndex();
-					token.parent = this;
-					return true;
-				}
-				return false;
-			}
-			
-			public override bool Accept(IHierarchicalVisitor<Node, Leaf> visitor)
-			{
-				return visitor.Visit(this);
-			}
-			
-			public override void Dump(StringBuilder sb, int indent)
-			{
-				sb.Append(' ', 2 * indent);
-				sb.Append(childIndex);
-				sb.Append(" ");
-				if (syntaxError != null)
-					sb.Append("? ");
-				sb.Append(token);
-				sb.Append(' ');
-				sb.Append((line + 1));
-				sb.Append(':');
-				sb.Append(tokenIndex);
-				if (syntaxError != null)
-					sb.Append(' ').Append(syntaxError);
-				sb.AppendLine();
-			}
-			
-			public void RemoveToken()
-			{
-				//	token.parent = null;
-				//	token = null;
-				//	if (parent != null)
-				//		parent.RemoveNodeAt(childIndex);
-			}
-			
-			public void ReparseToken()
-			{
-				if (token != null)
-				{
-					token.parent = null;
-					token = null;
-				}
-				if (parent != null)
-					parent.RemoveNodeAt(childIndex/*, false*/);
-			}
-			
-			public override string Print()
-			{
-				var lit = grammarNode as CsGrammar.Lit;
-				if (lit != null)
-					return lit.pretty;
-				return token != null ? token.text : "";
-			}
-			
-			public override bool IsLit(string litText)
-			{
-				var lit = grammarNode as CsGrammar.Lit;
-				return lit != null && lit.body == litText;
-			}
-			
-			public override bool HasLeafs(bool validNodesOnly = true)
-			{
-				return true;
-			}
-			
-			public override bool HasErrors(bool validNodesOnly = true)
-			{
-				return syntaxError != null;
-			}
-		}
-		
-		public class Node : BaseNode
-		{
-			protected List<BaseNode> nodes = new List<BaseNode>();
-			public int numValidNodes { get; protected set; }
-			public IEnumerable<BaseNode> Nodes { get { return nodes; } }
-			
-			public Scope scope;
-			public SymbolDeclaration declaration;
-			
-			public SemanticFlags semantics
-			{
-				get
-				{
-					var peer = ((CsGrammar.Id) grammarNode).peer;
-					if (peer == null)
-						Debug.Log("no peer for " + grammarNode);
-					return peer != null ? ((CsGrammar.Rule) peer).semantics : SemanticFlags.None;
-				}
-			}
-			
-			public Node(CsGrammar.Id rule)
-			{
-				grammarNode = rule;
-			}
-			
-			public BaseNode ChildAt(int index)
-			{
-				if (index < 0)
-					index += numValidNodes;
-				return index >= 0 && index < numValidNodes ? nodes[index] : null;
-			}
-			
-			public Leaf LeafAt(int index)
-			{
-				if (index < 0)
-					index += numValidNodes;
-				return index >= 0 && index < numValidNodes ? nodes[index] as Leaf : null;
-			}
-			
-			public Node NodeAt(int index)
-			{
-				if (index < 0)
-					index += numValidNodes;
-				return index >= 0 && index < numValidNodes ? nodes[index] as Node : null;
-			}
-			
-			public string RuleName
-			{
-				get { return ((CsGrammar.Id) grammarNode).GetName(); }
-			}
-			
-			public override bool Accept(IHierarchicalVisitor<Node, Leaf> visitor)
-			{
-				if (visitor.VisitEnter(this))
-				{
-					foreach (var child in nodes)
-						if (!child.Accept(visitor))
-							break;
-				}
-				return visitor.VisitLeave(this);
-			}
-			
-			//static int createdTokensCounter;
-			//static int reusedTokensCounter;
-			
-			public Leaf AddToken(CsGrammar.IScanner scanner)
-			{
-				if (numValidNodes < nodes.Count)
-				{
-					var reused = nodes[numValidNodes] as Leaf;
-					if (reused != null && reused.TryReuse(scanner))
-					{
-						//	reused.missing = false;
-						//	reused.errors = null;
-						
-						//reused.parent = this;
-						//reused.childIndex = numValidNodes;
-						++numValidNodes;
-						
-						//if (++reusedTokensCounter + createdTokensCounter == 1)
-						//{
-						//	UnityEditor.EditorApplication.delayCall += () => {
-						//		Debug.Log("Tokens - Created: " + createdTokensCounter + " Reused: " + reusedTokensCounter);
-						//		createdTokensCounter = 0;
-						//		reusedTokensCounter = 0;
-						//	};
-						//}
-						
-						//	Debug.Log("reused " + reused.token.text + " at line " + scanner.CurrentLine());
-						return reused;
-					}
-				}
-				
-				//if (reusedTokensCounter + ++createdTokensCounter == 1)
-				//{
-				//	UnityEditor.EditorApplication.delayCall += () => {
-				//		Debug.Log("Tokens - Created: " + createdTokensCounter + " Reused: " + reusedTokensCounter);
-				//		createdTokensCounter = 0;
-				//		reusedTokensCounter = 0;
-				//	};
-				//}
-				
-				var leaf = new Leaf(scanner) { parent = this, childIndex = numValidNodes };
-				if (numValidNodes == nodes.Count)
-				{
-					nodes.Add(leaf);
-					++numValidNodes;
-				}
-				else
-				{
-					nodes.Insert(numValidNodes++, leaf);
-					for (var i = numValidNodes; i < nodes.Count; ++i)
-						++nodes[i].childIndex;
-				}
-				
-				return leaf;
-			}
-			
-			public Leaf AddToken(SyntaxToken token)
-			{
-				if (!token.IsMissing() && numValidNodes < nodes.Count)
-				{
-					var reused = nodes[numValidNodes] as Leaf;
-					if (reused != null && reused.token.text == token.text && reused.token.tokenKind == token.tokenKind)
-					{
-						reused.missing = false;
-						reused.syntaxError = null;
-						
-						reused.token = token;
-						reused.parent = this;
-						reused.childIndex = numValidNodes;
-						++numValidNodes;
-						
-						Debug.Log("reused " + reused.token + " from line " + (reused.line + 1));
-						return reused;
-					}
-				}
-				
-				var leaf = new Leaf { token = token, parent = this, childIndex = numValidNodes };
-				if (numValidNodes == nodes.Count)
-				{
-					nodes.Add(leaf);
-					++numValidNodes;
-				}
-				else
-				{
-					nodes.Insert(numValidNodes++, leaf);
-					for (var i = numValidNodes; i < nodes.Count; ++i)
-						++nodes[i].childIndex;
-				}
-				
-				return leaf;
-			}
-			
-			public int InvalidateFrom(int index)
-			{
-				var numInvalidated = Mathf.Max(0, numValidNodes - index);
-				numValidNodes -= numInvalidated;
-				//for (var i = index; i < nodes.Count; ++i)
-				//    nodes[i].parent = null;
-				//nodes.RemoveRange(index, nodes.Count - index);
-				return numInvalidated;
-			}
-			
-			public void RemoveNodeAt(int index/*, bool canReuse = true*/)
-			{
-				if (index >= nodes.Count)
-					return;
-				
-				//if (!canReuse)
-				nodes[index].parent = null;
-				
-				if (index < numValidNodes)
-					--numValidNodes;
-				//if (!canReuse || index <= numValidNodes)
-				{
-					var node = nodes[index] as Node;
-					if (node != null)
-						node.Dispose();
-					nodes.RemoveAt(index);
-					for (var i = index; i < nodes.Count; ++i)
-						--nodes[i].childIndex;
-				}
-				if (/*nodes.Count == 0 &&*/ parent != null && !HasLeafs(false))
-					parent.RemoveNodeAt(childIndex/*, canReuse*/);
-			}
-			
-			//static int reusedNodesCounter, createdNodesCounter;
-			
-			public Node AddNode(CsGrammar.Id rule, CsGrammar.IScanner scanner, out bool skipParsing)
-			{
-				skipParsing = false;
-				
-				bool removedReusable = false;
-				
-				if (numValidNodes < nodes.Count)
-				{
-					var reusable = nodes[numValidNodes] as Node;
-					if (reusable != null)
-					{
-						var firstLeaf = reusable.GetFirstLeaf(false);
-						if (reusable.grammarNode != rule)
-						{
-							//	Debug.Log("Cannot reuse (different rules) " + rule.GetName() + " at line " + scanner.CurrentLine() + ":"
-							//		+ scanner.CurrentTokenIndex() + " vs. " + reusable.RuleName);
-							if (firstLeaf == null || firstLeaf.token == null || firstLeaf.line <= scanner.CurrentLine() - 1)
-							{
-								reusable.Dispose();
-								removedReusable = true;
-							}
-						}
-						else
-						{
-							if (firstLeaf != null && firstLeaf.token != null && firstLeaf.line > scanner.CurrentLine() - 1)
-							{
-								// Ignore this node for now
-							}
-							else if (firstLeaf == null || firstLeaf.token != null && firstLeaf.syntaxError != null)
-							{
-								//	Debug.Log("Could reuse " + rule.GetName() + " at line " + scanner.CurrentLine() + ":"
-								//		+ scanner.CurrentTokenIndex() + " (firstLeaf is null) ");
-								reusable.Dispose();
-								removedReusable = true;
-								//	nodes.RemoveAt(numValidNodes);
-								//	for (var i = numValidNodes; i < nodes.Count; ++i)
-								//		--nodes[i].childIndex;
-							}
-							else if (firstLeaf.token == scanner.Current)
-							{
-								var lastLeaf = reusable.GetLastLeaf();
-								if (lastLeaf != null && !reusable.HasErrors())
-								{
-									if (lastLeaf.token != null)
-									{
-										//if (++reusedNodesCounter + createdNodesCounter == 1)
-										//{
-										//	UnityEditor.EditorApplication.delayCall += () => {
-										//		Debug.Log("Nodes - Created: " + createdNodesCounter + " Reused: " + reusedNodesCounter);
-										//		createdNodesCounter = 0;
-										//		reusedNodesCounter = 0;
-										//	};
-										//}
-										
-										/*var moved =*/ ((CsGrammar.Scanner) scanner).MoveAfterLeaf(lastLeaf);
-										//	Debug.Log(moved  + " skipping to " + scanner.CurrentGrammarNode + " at " + lastLeaf.line +":" + lastLeaf.tokenIndex);
-										skipParsing = true;
-										//}
-										
-										//if (lastLeaf == null || lastLeaf.token == null)
-										//{
-										////	Debug.LogWarning("lastLeaf has no token! " + lastLeaf);
-										//}
-										//else
-										//{
-										//	Debug.Log("Reused full " + rule.GetName() + " from line " + (firstLeaf.line + 1) + " up to line " + scanner.CurrentLine() + ":"
-										//		+ scanner.CurrentTokenIndex() + " (" + scanner.Current.text + "...) ");
-										++numValidNodes;
-										return scanner.CurrentParseTreeNode;
-									}
-								}
-								else
-								{
-									//Debug.Log(firstLeaf.line);
-									reusable.Dispose();
-									removedReusable = true;
-								}
-							}
-							else if (reusable.numValidNodes == 0)
-							{
-								//if (++reusedNodesCounter + createdNodesCounter == 1)
-								//{
-								//	UnityEditor.EditorApplication.delayCall += () => {
-								//		Debug.Log("Nodes - Created: " + createdNodesCounter + " Reused: " + reusedNodesCounter);
-								//		createdNodesCounter = 0;
-								//		reusedNodesCounter = 0;
-								//	};
-								//}
-								
-								//Debug.Log("Reusing " + rule.GetName() + " at line " + scanner.CurrentLine() + ":"
-								//	+ scanner.CurrentTokenIndex() + " (" + scanner.Current.text + "...) reusable.numValidNodes is 0");
-								++numValidNodes;
-								reusable.syntaxError = null;
-								reusable.missing = false;
-								return reusable;
-							}
-							else if (scanner.Current != null && (firstLeaf.token == null || firstLeaf.line <= scanner.CurrentLine() - 1))
-							{
-								//	Debug.Log("Cannot reuse " + rule.GetName() + " at line " + scanner.CurrentLine() + ":"
-								//		+ scanner.CurrentTokenIndex() + " (" + scanner.Current.text + "...) ");
-								reusable.Dispose();
-								if (firstLeaf.token == null || firstLeaf.line == scanner.CurrentLine() - 1)
-								{
-									removedReusable = true;
-								}
-								else
-								{
-									nodes.RemoveAt(numValidNodes);
-									for (var i = numValidNodes; i < nodes.Count; ++i)
-										--nodes[i].childIndex;
-									return AddNode(rule, scanner, out skipParsing);
-								}
-							}
-							else
-							{
-								//	Debug.Log("Not reusing anything (scanner.Current is null). reusable is " + reusable.RuleName);
-							}
-						}
-					}
-				}
-				
-				//if (reusedNodesCounter + ++createdNodesCounter == 1)
-				//{
-				//	UnityEditor.EditorApplication.delayCall += () => {
-				//		Debug.Log("Nodes - Created: " + createdNodesCounter + " Reused: " + reusedNodesCounter);
-				//		createdNodesCounter = 0;
-				//		reusedNodesCounter = 0;
-				//	};
-				//}
-				
-				var node = new Node(rule) { parent = this, childIndex = numValidNodes };
-				if (numValidNodes == nodes.Count)
-				{
-					nodes.Add(node);
-					++numValidNodes;
-				}
-				else
-				{
-					if (removedReusable)
-						nodes[numValidNodes] = node;
-					else
-						nodes.Insert(numValidNodes, node);
-					++numValidNodes;
-					//	for (var i = numValidNodes; i < nodes.Count; ++i)
-					//		++nodes[i].childIndex;
-				}
-				if (numValidNodes < nodes.Count && nodes[numValidNodes].childIndex != numValidNodes)
-					for (var i = numValidNodes; i < nodes.Count; ++i)
-						nodes[i].childIndex = i;
-				return node;
-			}
-			
-			public BaseNode FindChildByName(params string[] name)
-			{
-				BaseNode result = this;
-				foreach (var n in name)
-				{
-					var node = result as Node;
-					if (node == null)
-						return null;
-					
-					var children = node.nodes;
-					result = null;
-					for (var i = 0; i < node.numValidNodes; i++)
-					{
-						var child = children[i];
-						if (child.grammarNode != null && child.grammarNode.ToString() == n)
-						{
-							result = child;
-							break;
-						}
-					}
-					if (result == null)
-						return null;
-				}
-				return result;
-			}
-			
-			public override void Dump(StringBuilder sb, int indent)
-			{
-				sb.Append(' ', 2 * indent);
-				sb.Append(childIndex);
-				sb.Append(' ');
-				var id = grammarNode as CsGrammar.Id;
-				if (id != null && id.Rule != null)
-				{
-					if (syntaxError != null)
-						sb.Append("? ");
-					sb.AppendLine(id.Rule.GetNt());
-					if (syntaxError != null)
-						sb.Append(' ').AppendLine(syntaxError);
-				}
-				
-				++indent;
-				for (var i = 0; i < numValidNodes; ++i)
-					nodes[i].Dump(sb, indent);
-			}
-			
-			public override string Print()
-			{
-				var result = string.Empty;
-				for (var i = 0; i < numValidNodes; i++)
-				{
-					var child = nodes[i];
-					result += child.Print();
-				}
-				return result;
-			}
-			
-			public override bool IsLit(string litText)
-			{
-				return false;
-			}
-			
-			public override bool HasLeafs(bool validNodesOnly = true)
-			{
-				var count = validNodesOnly ? numValidNodes : nodes.Count;
-				for (var i = 0; i < count; i++)
-				{
-					var n = nodes[i];
-					if (n.HasLeafs(validNodesOnly))
-						return true;
-				}
-				return false;
-			}
-			
-			public override bool HasErrors(bool validNodesOnly = true)
-			{
-				var count = validNodesOnly ? numValidNodes : nodes.Count;
-				for (int i = 0; i < count; i++)
-				{
-					var n = nodes[i];
-					if (n.HasErrors(validNodesOnly))
-						return true;
-				}
-				return false;
-			}
-			
-			public Leaf GetFirstLeaf(bool validNodesOnly = true)
-			{
-				var count = validNodesOnly ? numValidNodes : nodes.Count;
-				for (int i = 0; i < count; i++)
-				{
-					var child = nodes[i];
-					var leaf = child as Leaf;
-					if (leaf != null)
-						return leaf;
-					leaf = ((Node) child).GetFirstLeaf(validNodesOnly);
-					if (leaf != null)
-						return leaf;
-				}
-				return null;
-			}
-			
-			public Leaf GetLastLeaf()
-			{
-				for (int i = numValidNodes; i-- > 0; )
-				{
-					var child = nodes[i];
-					var leaf = child as Leaf;
-					if (leaf != null)
-					{
-						if (leaf.token == null)
-						{
-							//	Debug.LogWarning("Leaf has no token! " + leaf);
-							continue;
-						}
-						return leaf;
-					}
-					leaf = ((Node)child).GetLastLeaf();
-					if (leaf != null)
-						return leaf;
-				}
-				return null;
-			}
-			
-			public void Exclude()
-			{
-				if (nodes.Count != 1)
-					return;
-				parent.nodes[childIndex] = nodes[0];
-				nodes[0].parent = parent;
-				nodes[0].childIndex = childIndex;
-			}
-			
-			//public bool TryReuse(CsGrammar.IScanner scanner)
-			//{
-			//    if (numValidNodes == nodes.Count)
-			//        return false;
-			//    if (scanner.CurrentParseTreeNode)
-			//}
-			
-			public void Reduce()
-			{
-				//if (numValidNodes < nodes.Count)
-				//{
-				//    for (var i = numValidNodes; i < nodes.Count; ++i)
-				//        nodes[i].parent = null;
-				////	nodes.RemoveRange(numValidNodes, nodes.Count - numValidNodes);
-				//}
-			}
-			
-			public void CleanUp()
-			{
-				for (var i = nodes.Count; i --> 0; )
-				{
-					var child = nodes[i] as Node;
-					if (child != null)
-						child.CleanUp();
-				}
-				if (numValidNodes < nodes.Count)
-				{
-					for (var j = nodes.Count; j --> numValidNodes; )
-					{
-						var child = nodes[j] as ParseTree.Node;
-						if (child != null)
-							child.Dispose();
-					}
-					nodes.RemoveRange(numValidNodes, nodes.Count - numValidNodes);
-				}
-			}
-			
-			public void Dispose()
-			{
-				for (var i = nodes.Count; i --> 0; )
-				{
-					var child = nodes[i] as Node;
-					if (child != null)
-						child.Dispose();
-				}
-				
-				if (declaration != null && declaration.scope != null)
-				{
-					//if (declaration.definition != null)
-					//	Debug.Log("Removing " + declaration.definition.ReflectionName);
-					//else
-					//	Debug.Log("Removing null declaration! " + declaration.kind);
-					declaration.scope.RemoveDeclaration(declaration);
-					++ParseTree.resolverVersion;
-					if (ParseTree.resolverVersion == 0)
-						++ParseTree.resolverVersion;
-				}
-			}
-		}
-		
-		public Node root;
-		
-		public override string ToString()
-		{
-			var sb = new StringBuilder();
-			root.Dump(sb, 0);
-			return sb.ToString();
-		}
-	}
-
-	[Flags]
-	public enum IdentifierCompletionsType
-	{
-		None				= 1<<0,
-		Namespace			= 1<<1,
-		TypeName			= 1<<2,
-		ArrayType			= 1<<3,
-		NonArrayType		= 1<<4,
-		ValueType			= 1<<5,
-		SimpleType			= 1<<6,
-		ExceptionClassType	= 1<<7,
-		AttributeClassType	= 1<<8,
-		Member				= 1<<9,
-		Static				= 1<<10,
-		Value				= 1<<11,
-		ArgumentName		= 1<<12,
-		MemberName          = 1<<13,
-	}
-
-	public abstract class CsGrammar
+	public class CsGrammar
 	{
         public Rule r_compilationUnit { get; private set; }
         
@@ -887,7 +51,7 @@ namespace CSharpCodeParser
             tokenEOF = TokenToId("EOF");
         }
 
-        private Parser parser;
+		public Parser parser{ get; private set; }
 
         public CsGrammar()
         {
@@ -896,10 +60,6 @@ namespace CSharpCodeParser
             IDENTIFIER = new Id("IDENTIFIER");
             LITERAL = new Id("LITERAL");
             NAME = new NameId();
-
-            //	NAME = new Id("IDENTIFIER");
-            //	tokenName = TokenToId("NAME");
-            //	NAME.lookahead.Add(new TokenSet(tokenName));
 
             var externAliasDirective = new Id("externAliasDirective");
             var usingDirective = new Id("usingDirective");
@@ -936,7 +96,6 @@ namespace CSharpCodeParser
             var operatorDeclaration = new Id("operatorDeclaration");
             var constructorDeclaration = new Id("constructorDeclaration");
             var destructorDeclaration = new Id("destructorDeclaration");
-            //var staticConstructorDeclaration = new Id("staticConstructorDeclaration");
             var constantDeclarators = new Id("constantDeclarators");
             var constantDeclarator = new Id("constantDeclarator");
             var type = new Id("type");
@@ -949,7 +108,6 @@ namespace CSharpCodeParser
             var variableInitializerList = new Id("variableInitializerList");
             var simpleType = new Id("simpleType");
             var exceptionClassType = new Id("exceptionClassType");
-            //var arrayType = new Id("arrayType");
             var nonArrayType = new Id("nonArrayType");
             var rankSpecifier = new Id("rankSpecifier");
             var numericType = new Id("numericType");
@@ -965,13 +123,6 @@ namespace CSharpCodeParser
             { semantics = SemanticFlags.CompilationUnitScope };
 
             parser = new Parser(r_compilationUnit, this);
-
-
-            //NAME = new Id("NAME");
-            //parser.Add(new Rule("NAME",
-            //    IDENTIFIER
-            //    ));
-
 
             parser.Add(new Rule("externAliasDirective",
                 new Seq("extern", "alias", IDENTIFIER, ";")
@@ -1019,18 +170,6 @@ namespace CSharpCodeParser
                 "{" - new Many(externAliasDirective) - new Many(usingDirective) - new Many(namespaceMemberDeclaration) - "}"
                 )
             { semantics = SemanticFlags.NamespaceBodyScope });
-
-            //parser.Add(new Rule("typeDeclaration",
-            //   new Alt(
-            //       new Seq(
-            //           new Opt("partial"),
-            //           new Id("classDeclaration") | new Id("structDeclaration") | new Id("interfaceDeclaration")),
-            //       new Id("enumDeclaration"),
-            //       new Id("delegateDeclaration"))
-            //   ));
-
-
-            //	parser = new Parser(r_compilationUnit, this);
 
 
             parser.Add(new Rule("usingNamespaceDirective",
@@ -1250,11 +389,6 @@ namespace CSharpCodeParser
                 new Lit("new") - "(" - ")"
                 ));
 
-            //primary_constraint:
-            //	class_type
-            //	| 'class'
-            //	| 'struct' ;
-
             parser.Add(new Rule("methodBody",
                 "{" - statementList - "}"
                 | ";"
@@ -1314,10 +448,6 @@ namespace CSharpCodeParser
                 | embeddedStatement
                 ));
 
-            //	parser.Add(new Rule("declarationStatement",
-            //		new Seq( localVariableDeclaration | localConstantDeclaration, ";" )
-            //		));
-
             parser.Add(new Rule("localVariableDeclaration",
                 localVariableType - localVariableDeclarators
                 ));
@@ -1342,17 +472,10 @@ namespace CSharpCodeParser
                 )
             { semantics = SemanticFlags.LocalVariableInitializerScope });
 
-            //parser.Add(new Rule("stackallocInitializer",
-            //    new Seq( "stackalloc", unmanagedType, "[", expression, "]" )
-            //    ));
 
             parser.Add(new Rule("localConstantDeclaration",
                 "const" - type - constantDeclarators - ";"
                 ));
-
-            //parser.Add(new Rule("unmanagedType",
-            //    type
-            //    ));
 
             parser.Add(new Rule("labeledStatement",
                 IDENTIFIER - ":" - statement
@@ -1564,7 +687,6 @@ namespace CSharpCodeParser
             var forStatement = new Id("forStatement");
             var foreachStatement = new Id("foreachStatement");
             var forInitializer = new Id("forInitializer");
-            //var forCondition = new Id("forCondition");
             var forIterator = new Id("forIterator");
             var statementExpressionList = new Id("statementExpressionList");
 
@@ -1744,10 +866,6 @@ namespace CSharpCodeParser
                 | ".EXPECTEDTYPE"
                 ));
 
-            //parser.Add(new Rule("arrayInitializer",
-            //    new Seq( "{", new Opt(variableInitializerList), "}" )
-            //    ));
-
             parser.Add(new Rule("modifiers",
                 new Many(
                     new Lit("new") | "public" | "protected" | "internal" | "private" | "abstract"
@@ -1826,9 +944,6 @@ namespace CSharpCodeParser
                 - new Opt(typeParameterConstraintsClauses) - structBody - new Opt(";")
                 )
             { semantics = SemanticFlags.StructDeclaration | SemanticFlags.TypeDeclarationScope });
-
-            //struct_modifier:
-            //    'new' | 'public' | 'protected' | 'internal' | 'private' | 'unsafe' ;
 
             parser.Add(new Rule("structInterfaces",
                 ":" - interfaceTypeList
@@ -2022,11 +1137,6 @@ namespace CSharpCodeParser
                 | typeName - new Opt(rankSpecifiers)
                 ));
 
-            //parser.Add(new Rule("typeSpecifier",
-            //    predefinedType - new Opt("?") - new Opt(rankSpecifiers)
-            //    | typeName - new Opt("?") - new Opt(rankSpecifiers)
-            //    ));
-
             parser.Add(new Rule("exceptionClassType",
                 typeName | "object" | "string"
                 ));
@@ -2036,10 +1146,6 @@ namespace CSharpCodeParser
                 | "object"
                 | "string"
                 ));
-
-            //	parser.Add(new Rule("arrayType",
-            //		nonArrayType - rankSpecifiers
-            //		));
 
             parser.Add(new Rule("simpleType",
                 numericType | "bool"
@@ -2203,7 +1309,6 @@ namespace CSharpCodeParser
                 | defaultValueExpression
                 ));
 
-            //var bracketsOrArguments = new Id("bracketsOrArguments");
             var argument = new Id("argument");
             var attributeArgument = new Id("attributeArgument");
             var expressionList = new Id("expressionList");
@@ -2221,10 +1326,6 @@ namespace CSharpCodeParser
             parser.Add(new Rule("accessIdentifier",
                 "." - IDENTIFIER - new If(typeArgumentList, typeArgumentList)
                 ));
-
-            //parser.Add(new Rule("bracketsOrArguments",
-            //    brackets | arguments
-            //    ));
 
             parser.Add(new Rule("brackets",
                 "[" - new Opt(expressionList) - "]"
@@ -2289,10 +1390,6 @@ namespace CSharpCodeParser
                 "[" - new Many(",") - "]" - new Many("[" - new Many(",") - "]")
                 ));
 
-            //parser.Add(new Rule("delegateCreationExpression",
-            //    new Seq( typeName, "(", typeName, ")" )
-            //    ));
-
             var anonymousObjectInitializer = new Id("anonymousObjectInitializer");
             var memberDeclaratorList = new Id("memberDeclaratorList");
             var memberDeclarator = new Id("memberDeclarator");
@@ -2320,11 +1417,6 @@ namespace CSharpCodeParser
             parser.Add(new Rule("memberAccessExpression",
                 expression
                 ));
-
-            //parser.Add(new Rule("primaryOrArrayCreationExpression",
-            //    new If( /*arrayCreationExpression*/ "new" - new Opt(nonArrayType) - "[", arrayCreationExpression )
-            //    | primaryExpression
-            //    ));
 
             var objectOrCollectionInitializer = new Id("objectOrCollectionInitializer");
             var objectInitializer = new Id("objectInitializer");
@@ -2384,10 +1476,6 @@ namespace CSharpCodeParser
             parser.Add(new Rule("implicitArrayCreationExpression",
                 rankSpecifier - arrayInitializer
                 ));
-
-            //parser.Add(new Rule("invocationPart",
-            //    accessIdentifier | brackets
-            //    ));
 
             parser.Add(new Rule("arrayInitializer",
                 "{" - new Opt(variableInitializerList) - "}"
@@ -2662,132 +1750,8 @@ namespace CSharpCodeParser
 
             parser.InitializeGrammar();
             InitializeTokenCategories();
-
-            //Debug.Log(parser);
         }
 
-        public class Scanner : IScanner
-		{
-			public void MoveAfterLeaf(ParseTree.Leaf leaf)
-			{
-			}
-
-
-			public IScanner Clone()
-			{
-				return null;
-			}
-			
-			public bool Lookahead(Node node, int maxDistance = int.MaxValue)
-			{
-				return false;
-			}
-			public SyntaxToken Lookahead(int offset, bool skipWhitespace = true)
-			{
-				return null;
-			}
-			
-			public SyntaxToken CurrentToken()
-			{
-				return null;
-			}
-			public int CurrentLine()
-			{
-				return 0;
-			}
-			public int CurrentTokenIndex()
-			{
-				return 0;
-			}
-			
-			public CsGrammar.Node CurrentGrammarNode { get; set; }
-			public ParseTree.Node CurrentParseTreeNode { get; set; }
-			
-			public ParseTree.Leaf ErrorToken { get; set; }
-			public string ErrorMessage { get; set; }
-			public CsGrammar.Node ErrorGrammarNode { get; set; }
-			public ParseTree.Node ErrorParseTreeNode { get; set; }
-			
-			public bool KeepScanning { get; set; }
-			
-			public bool Seeking { get; set; }
-			
-			public void InsertMissingToken(string errorMessage)
-			{
-			}
-			
-			public bool CollectCompletions(TokenSet tokenSet)
-			{
-				return false;
-			}
-			
-			public void OnReduceSemanticNode(ParseTree.Node node)
-			{
-			}
-			
-			public void SyntaxErrorExpected(TokenSet lookahead)
-			{
-			}
-
-			public SyntaxToken Current 
-			{
-				get;
-				set;
-			}
-
-			object System.Collections.IEnumerator.Current
-			{
-				get { return Current; }
-			}
-			public bool MoveNext()
-			{
-				return false;
-			}
-
-			public void Reset()
-			{
-			}
-
-			public void Dispose()
-			{
-			}
-		}
-		public abstract Parser GetParser { get; }
-		
-		public abstract IdentifierCompletionsType GetCompletionTypes(ParseTree.BaseNode afterNode);
-		
-		public interface IScanner : IEnumerator<SyntaxToken>
-		{
-			IScanner Clone();
-			
-			bool Lookahead(Node node, int maxDistance = int.MaxValue);
-			SyntaxToken Lookahead(int offset, bool skipWhitespace = true);
-			
-			SyntaxToken CurrentToken();
-			int CurrentLine();
-			int CurrentTokenIndex();
-			
-			CsGrammar.Node CurrentGrammarNode { get; set; }
-			ParseTree.Node CurrentParseTreeNode { get; set; }
-			
-			ParseTree.Leaf ErrorToken { get; set; }
-			string ErrorMessage { get; set; }
-			CsGrammar.Node ErrorGrammarNode { get; set; }
-			ParseTree.Node ErrorParseTreeNode { get; set; }
-			
-			bool KeepScanning { get; }
-			
-			bool Seeking { get; }
-			
-			void InsertMissingToken(string errorMessage);
-			
-			bool CollectCompletions(TokenSet tokenSet);
-			
-			void OnReduceSemanticNode(ParseTree.Node node);
-			
-			void SyntaxErrorExpected(TokenSet lookahead);
-		}
-		
 		public abstract class Node
 		{
 			public Node parent;
@@ -2823,22 +1787,6 @@ namespace CSharpCodeParser
 				return a;
 			}
 			
-			//public static implicit operator Predicate<IScanner> (Node node)
-			//{
-			//    return (IScanner scanner) =>
-			//        {
-			//            try
-			//            {
-			//                node.Parse(scanner.Clone(), new GoalAdapter());
-			//            }
-			//            catch
-			//            {
-			//                return false;
-			//            }
-			//            return true;
-			//        };
-			//}
-			
 			public virtual Node GetNode()
 			{
 				return this;
@@ -2849,12 +1797,7 @@ namespace CSharpCodeParser
 				throw new Exception(GetType() + ": cannot Add()");
 			}
 			
-			//public virtual TokenSet GetLookahead()
-			//{
-			//    return lookahead;
-			//}
-			
-			public virtual bool Matches(IScanner scanner)
+			public virtual bool Matches(Scanner scanner)
 			{
 				return lookahead.Matches(scanner.Current);
 			}
@@ -2862,27 +1805,10 @@ namespace CSharpCodeParser
 			public abstract TokenSet SetLookahead(Parser parser);
 			
 			public abstract TokenSet SetFollow(Parser parser, TokenSet succ);
+
 			
-			public virtual void CheckLL1(Parser parser)
-			{
-				if (follow == null)
-					throw new Exception(this + ": follow not set");
-				if (lookahead.MatchesEmpty() && lookahead.Accepts(follow))
-					throw new Exception(this + ": ambiguous\n"
-					                    + "  lookahead " + lookahead.ToString(parser) + "\n"
-					                    + "  follow " + follow.ToString(parser));
-			}
-			
-			public abstract bool Scan(IScanner scanner);
-			
-			public void SyntaxError(IScanner scanner, string errorMessage)
-			{
-				if (scanner.ErrorMessage != null)
-					return;
-				//Debug.LogError(errorMessage);
-				scanner.ErrorMessage = errorMessage;
-			}
-			
+			public abstract bool Scan(Scanner scanner);
+
 			public virtual IEnumerable<Lit> EnumerateLitNodes() { yield break; }
 			
 			public virtual IEnumerable<Id> EnumerateIdNodes() { yield break; }
@@ -2893,168 +1819,13 @@ namespace CSharpCodeParser
 					yield return (T)this;
 			}
 			
-			public abstract Node Parse(IScanner scanner);
+			public abstract Node Parse(Scanner scanner);
 			
-			public Node Recover(IScanner scanner, out int numMissing)
-			{
-				numMissing = 0;
-				
-				var current = this;
-				while (current.parent != null)
-				{
-					var next = current.parent.NextAfterChild(current, scanner);
-					if (next == null)
-						break;
-					
-					var nextId = next as Id;
-					if (nextId != null && nextId.GetName() == "attribute")
-						return nextId;
-					
-					var nextMatchesScanner = next.Matches(scanner);
-					while (next != null && !nextMatchesScanner && next.lookahead.MatchesEmpty())
-					{
-						next = next.parent.NextAfterChild(next, scanner);
-						nextMatchesScanner = next != null && next.Matches(scanner);
-					}
-					
-					if (nextMatchesScanner && scanner.Current.text == ";" && next is Opt)
-					{
-						return null;
-					}
-					
-					//if (next is Many)
-					//{
-					//    var currentToken = scanner.Current;
-					//    var n = 0;
-					//    var recoverOnMany = Recover(scanner, out n);
-					//    if (recoverOnMany != null && currentToken != scanner.Current)
-					//    {
-					//        next = recoverOnMany;
-					//    }
-					//    else
-					//    {
-					//        next = next.parent.NextAfterChild(next, scanner);
-					//    }
-					//}
-					//if (next == null)
-					//    break;
-					
-					++numMissing;
-					if (nextMatchesScanner)
-					{
-						//if (scanner.Current.text == ";" && next is Opt)
-						//{
-						//	Debug.Log(next);
-						//	return null;
-						//}
-						
-						//var clone = scanner.Clone();
-						if (scanner.Current.text == "{" ||
-						    scanner.Current.text == "}" ||
-						    scanner.Lookahead(next, 3))//next.Scan(clone))
-						{
-							return next;
-						}
-						//					else
-						//					{
-						//						nextMatchesScanner = false;
-						//					}
-					}
-					
-					if (numMissing <= 1 && scanner.Current.text != "{" && scanner.Current.text != "}")
-						using (var laScanner = scanner.Clone())
-							if (//laScanner.CurrentLine() == scanner.CurrentLine() &&
-							    laScanner.MoveNext() && next.Matches(laScanner))
-					{
-						if (laScanner.Lookahead(next, 3))//.Scan(laScanner))
-							return null;
-					}
-					
-					current = next;
-				}
-				return null;
-			}
+
 			
-			public virtual Node NextAfterChild(Node child, IScanner scanner)
+			public virtual Node NextAfterChild(Node child, Scanner scanner)
 			{
 				return parent != null ? parent.NextAfterChild(this, scanner) : null;
-			}
-			
-			public bool CollectCompletions(TokenSet tokenSet, IScanner scanner, int identifierId)
-			{
-				var clone = scanner.Clone();
-				
-				//	string debug = null;
-				
-				//	var idTypes = IdentifierCompletionsType.None;
-				var hasName = false;
-				var current = this;
-				while (current != null && current.parent != null)
-				{
-					//if (clone.CurrentParseTreeNode.RuleName != debug)
-					//{
-					//    debug = clone.CurrentParseTreeNode.RuleName;
-					//    BitArray set;
-					//    current.lookahead.GetDataSet(out set);
-					////	UnityEngine.Debug.Log(debug + " LA:" + (set != null ? set.Count : 1));
-					//}
-					
-					tokenSet.Add(current.lookahead);
-					
-					if (current.lookahead.Matches(identifierId))
-					{
-						Rule currentRule = null;
-						var currentId = current as Id;
-						if (currentId == null)
-						{
-							var rule = current.parent;
-							while (rule != null && !(rule is Rule))
-								rule = rule.parent;
-							currentId = rule != null ? rule.parent as Id : null;
-							currentRule = rule as Rule;
-						}
-						
-						//	UnityEngine.Debug.Log("IDENTIFIER in " + (currentId ?? current));
-						
-						if (currentId != null)
-						{
-							var peerAsRule = currentId.peer as Rule;
-							if (peerAsRule != null && peerAsRule.contextualKeyword)
-							{
-								Debug.Log(currentId.GetName());
-							}
-							else if (currentRule != null && currentRule.contextualKeyword)
-							{
-								Debug.Log("currentRule " + currentRule.GetNt());
-							}
-							else
-							{
-								var id = currentId.GetName();
-								if (Array.IndexOf(new []
-								                  {
-									"constantDeclarators",
-									"constantDeclarator",
-								}, id) >= 0)
-								{
-									hasName = true;
-								}
-							}
-						}
-						
-						//    idTypes |= clone.GetCompletionIdentifierType();
-					}
-					
-					if (!current.lookahead.MatchesEmpty())
-						break;
-					
-					current = current.parent.NextAfterChild(current, clone);
-				}
-				tokenSet.RemoveEmpty();
-				
-				//Debug.Log(tokenSet.ToString(FlipbookGames.ScriptInspector2.CsGrammar.Instance.GetParser));
-				
-				//	UnityEngine.Debug.Log("Current node " + current.ToString());
-				return hasName;
 			}
 		}
 		
@@ -3127,14 +1898,12 @@ namespace CSharpCodeParser
 				return lookahead;
 			}
 			
-			public override void CheckLL1(Parser parser) {}
-			
-			public override bool Scan(IScanner scanner)
+			public override bool Scan(Scanner scanner)
 			{
 				return !scanner.KeepScanning || peer.Scan(scanner);
 			}
 			
-			public override Node Parse(IScanner scanner)
+			public override Node Parse(Scanner scanner)
 			{
 				peer.parent = this;
 				var rule = peer as Rule;
@@ -3150,7 +1919,7 @@ namespace CSharpCodeParser
 				return result2;
 			}
 			
-			public override Node NextAfterChild(Node child, IScanner scanner)
+			public override Node NextAfterChild(Node child, Scanner scanner)
 			{
 				if (peer is Rule)
 					scanner.CurrentParseTreeNode = scanner.CurrentParseTreeNode.parent;
@@ -3194,11 +1963,7 @@ namespace CSharpCodeParser
 				return SetLookahead(parser);
 			}
 			
-			public override void CheckLL1(Parser parser)
-			{
-			}
-			
-			public override bool Scan(IScanner scanner)
+			public override bool Scan(Scanner scanner)
 			{
 				if (!scanner.KeepScanning)
 					return true;
@@ -3210,21 +1975,21 @@ namespace CSharpCodeParser
 				return true;
 			}
 			
-			public override Node Parse(IScanner scanner)
+			public override Node Parse(Scanner scanner)
 			{
 				if (!lookahead.Matches(scanner.Current.tokenId))
 				{
-					scanner.SyntaxErrorExpected(lookahead);
+					//scanner.SyntaxErrorExpected(lookahead);
 					return this;
 				}
 				
 				scanner.CurrentParseTreeNode.AddToken(scanner).grammarNode = this;
 				scanner.MoveNext();
-				if (scanner.ErrorMessage == null)
-				{
-					scanner.ErrorParseTreeNode = scanner.CurrentParseTreeNode;
-					scanner.ErrorGrammarNode = scanner.CurrentGrammarNode;
-				}
+				//if (scanner.ErrorMessage == null)
+				//{
+					//scanner.ErrorParseTreeNode = scanner.CurrentParseTreeNode;
+					//scanner.ErrorGrammarNode = scanner.CurrentGrammarNode;
+				//}
 				
 				return parent.NextAfterChild(this, scanner);
 			}
@@ -3323,15 +2088,9 @@ namespace CSharpCodeParser
 					node.SetFollow(parser, succ);
 				return lookahead;
 			}
+
 			
-			public override void CheckLL1(Parser parser)
-			{
-				base.CheckLL1(parser);
-				foreach (var node in nodes)
-					node.CheckLL1(parser);
-			}
-			
-			public override bool Scan(IScanner scanner)
+			public override bool Scan(Scanner scanner)
 			{
 				if (!scanner.KeepScanning)
 					return true;
@@ -3345,7 +2104,7 @@ namespace CSharpCodeParser
 				return true;
 			}
 			
-			public override Node Parse(IScanner scanner)
+			public override Node Parse(Scanner scanner)
 			{
 				foreach (var node in nodes)
 				{
@@ -3357,7 +2116,7 @@ namespace CSharpCodeParser
 				if (lookahead.MatchesEmpty())
 					return NextAfterChild(this, scanner);
 				
-				scanner.SyntaxErrorExpected(lookahead);
+				//scanner.SyntaxErrorExpected(lookahead);
 				return this;
 			}
 			
@@ -3438,23 +2197,13 @@ namespace CSharpCodeParser
 				node.SetFollow(parser, succ);
 				return lookahead;
 			}
-			
-			// subtree is checked.
-			public override void CheckLL1(Parser parser)
-			{
-				// trust the predicate!
-				//base.CheckLL1(parser);
-				if (follow == null)
-					throw new Exception(this + ": follow not set");
-				node.CheckLL1(parser);
-			}
-			
-			public override bool Matches(IScanner scanner)
+
+			public override bool Matches(Scanner scanner)
 			{
 				return node.Matches(scanner);
 			}
 			
-			public override bool Scan(IScanner scanner)
+			public override bool Scan(Scanner scanner)
 			{
 				if (!scanner.KeepScanning)
 					return true;
@@ -3490,15 +2239,12 @@ namespace CSharpCodeParser
 				return true;
 			}
 			
-			public override Node NextAfterChild(Node child, IScanner scanner)
+			public override Node NextAfterChild(Node child, Scanner scanner)
 			{
-				//	if (scanner.ErrorMessage == null || Parse(scanner.Clone()))
 				return this;
-				
-				//	return base.NextAfterChild(child, scanner);
 			}
 			
-			public override Node Parse(IScanner scanner)
+			public override Node Parse(Scanner scanner)
 			{
 				var ifNode = node as If;
 				if (ifNode != null)
@@ -3511,7 +2257,6 @@ namespace CSharpCodeParser
 					var nextNode = node.Parse(scanner);
 					if (nextNode != this || scanner.CurrentTokenIndex() != tokenIndex || scanner.CurrentLine() != line)
 						return nextNode;
-					//Debug.Log("Exiting Many " + this + " in goal: " + scanner.CurrentParseTreeNode);
 				}
 				else
 				{
@@ -3553,64 +2298,6 @@ namespace CSharpCodeParser
 			}
 		}
 		
-		//protected class Some : Many
-		//{
-		//    public Some(Node node)
-		//        : base(node)
-		//    {
-		//    }
-		
-		//    public override Node GetNode()
-		//    {
-		//        if (node is Some)			// { { n } } -> { n }
-		//            return node;
-		
-		//        if (node is Opt)		// { [ n ] } -> [{ n }]
-		//            return new Many(node.GetNode());
-		
-		//        if (node is Many)		// { [{ n }] } -> [{ n }]
-		//            return node;
-		
-		//        return this;
-		//    }
-		
-		//    // lookahead results from subtree.
-		//    public override TokenSet SetLookahead(Parser parser)
-		//    {
-		//        if (lookahead == null)
-		//            lookahead = node.SetLookahead(parser);
-		
-		//        return lookahead;
-		//    }
-		
-		//    // lookahead != follow; check subtree.
-		//    public override void CheckLL1(Parser parser)
-		//    {
-		//        if (follow == null)
-		//            throw new Exception(this + ": follow not set");
-		//        if (lookahead.Accepts(follow))
-		//            throw new Exception(this + ": ambiguous\n"
-		//                + "  lookahead " + lookahead.ToString(parser) + "\n"
-		//                + "  follow " + follow.ToString(parser));
-		//        node.CheckLL1(parser);
-		//    }
-		
-		//    public override void Parse(IScanner scanner, Goal goal)
-		//    {
-		//        if (lookahead.Matches(scanner.Current.tokenId))
-		//            do
-		//                node.Parse(scanner, goal);
-		//            while (lookahead.Matches(scanner.Current.tokenId));
-		//        else if (!lookahead.MatchesEmpty())
-		//            throw new Exception(scanner + ": syntax error in Some");
-		//    }
-		
-		//    public override string ToString()
-		//    {
-		//        return "{ " + node + " }";
-		//    }
-		//}
-		
 		protected class Opt : Many
 		{
 			public Opt(Node node)
@@ -3620,9 +2307,6 @@ namespace CSharpCodeParser
 			
 			public override Node GetNode()
 			{
-				//	if (node is Some)	// [ { n } ] -> [{ n }]
-				//		return new Many(node.GetNode());
-				
 				if (node is Opt)	// [ [ n ] ] -> [ n ]
 					return node;
 				
@@ -3632,7 +2316,7 @@ namespace CSharpCodeParser
 				return this;
 			}
 			
-			public override bool Scan(IScanner scanner)
+			public override bool Scan(Scanner scanner)
 			{
 				if (!scanner.KeepScanning)
 					return true;
@@ -3642,14 +2326,14 @@ namespace CSharpCodeParser
 				return true;
 			}
 			
-			public override Node Parse(IScanner scanner)
+			public override Node Parse(Scanner scanner)
 			{
 				if (lookahead.Matches(scanner.Current.tokenId))
 					return node.Parse(scanner);
 				return parent.NextAfterChild(this, scanner);
 			}
 			
-			public override Node NextAfterChild(Node child, IScanner scanner)
+			public override Node NextAfterChild(Node child, Scanner scanner)
 			{
 				return parent != null ? parent.NextAfterChild(this, scanner) : null;
 			}
@@ -3662,11 +2346,11 @@ namespace CSharpCodeParser
 		
 		protected class If : Opt
 		{
-			protected readonly Predicate<IScanner> predicate;
+			protected readonly Predicate<Scanner> predicate;
 			protected readonly Node nodePredicate;
 			protected readonly bool debug;
 			
-			public If(Predicate<IScanner> pred, Node node, bool debug = false)
+			public If(Predicate<Scanner> pred, Node node, bool debug = false)
 				: base(node)
 			{
 				predicate = pred;
@@ -3682,27 +2366,11 @@ namespace CSharpCodeParser
 			
 			public override Node GetNode()
 			{
-				//    if (node is Some)	// [ { n } ] -> [{ n }]
-				//        return new Many(node.GetNode());
-				
-				//    if (node is Opt)	// [ [ n ] ] -> [ n ]
-				//        return node;
-				
-				//    if (node is Many)	// [ [{ n }] ] -> [{ n }]
-				//        return node;
-				
 				return this;
 			}
 			
-			public virtual bool CheckPredicate(IScanner scanner)
+			public virtual bool CheckPredicate(Scanner scanner)
 			{
-				//if (debug)
-				//{
-				//    var s = scanner.Clone();
-				//    Debug.Log(s.Current.tokenKind + " " + s.Current.text);
-				//    s.MoveNext();
-				//    Debug.Log(s.Current.tokenKind + " " + s.Current.text);
-				//}
 				if (predicate != null)
 					return predicate(scanner);
 				else if (nodePredicate != null)
@@ -3712,12 +2380,12 @@ namespace CSharpCodeParser
 				return false;
 			}
 			
-			public override bool Matches(IScanner scanner)
+			public override bool Matches(Scanner scanner)
 			{
 				return lookahead.Matches(scanner.Current) && CheckPredicate(scanner);
 			}
 			
-			public override bool Scan(IScanner scanner)
+			public override bool Scan(Scanner scanner)
 			{
 				if (!scanner.KeepScanning)
 					return true;
@@ -3727,7 +2395,7 @@ namespace CSharpCodeParser
 				return true;
 			}
 			
-			public override Node Parse(IScanner scanner)
+			public override Node Parse(Scanner scanner)
 			{
 				if (lookahead.Matches(scanner.Current.tokenId) && CheckPredicate(scanner))
 					return node.Parse(scanner);
@@ -3759,17 +2427,12 @@ namespace CSharpCodeParser
 		
 		protected class IfNot : If
 		{
-			//public IfNot(Predicate<IScanner> pred, Node node)
-			//    : base(pred, node)
-			//{
-			//}
-			
 			public IfNot(Node pred, Node node)
 				: base(pred, node)
 			{
 			}
 			
-			public override bool CheckPredicate(IScanner scanner)
+			public override bool CheckPredicate(Scanner scanner)
 			{
 				return !base.CheckPredicate(scanner);
 			}
@@ -3788,14 +2451,7 @@ namespace CSharpCodeParser
 				foreach (var t in nodes)
 					Add(t);
 			}
-			
-			//public Seq(int debugLine, params Node[] nodes)
-			//{
-			//	//this.debugLine = debugLine;
-			//	foreach (var t in nodes)
-			//		Add(t);
-			//}
-			
+
 			public override sealed void Add(Node node)
 			{
 				var idNode = node as Id;
@@ -3869,14 +2525,7 @@ namespace CSharpCodeParser
 				return lookahead;
 			}
 			
-			public override void CheckLL1(Parser parser)
-			{
-				base.CheckLL1(parser);
-				foreach (var t in nodes)
-					t.CheckLL1(parser);
-			}
-			
-			public override bool Scan(IScanner scanner)
+			public override bool Scan(Scanner scanner)
 			{
 				foreach (var t in nodes)
 				{
@@ -3888,7 +2537,7 @@ namespace CSharpCodeParser
 				return true;
 			}
 			
-			public override Node NextAfterChild(Node child, IScanner scanner)
+			public override Node NextAfterChild(Node child, Scanner scanner)
 			{
 				var index = child.childIndex;
 				if (++index < nodes.Count)
@@ -3896,7 +2545,7 @@ namespace CSharpCodeParser
 				return base.NextAfterChild(this, scanner);
 			}
 			
-			public override Node Parse(IScanner scanner)
+			public override Node Parse(Scanner scanner)
 			{
 				return nodes[0].Parse(scanner);
 			}
@@ -3961,12 +2610,7 @@ namespace CSharpCodeParser
 				return lookahead;
 			}
 			
-			// follow is not set; nothing to check.
-			public override void CheckLL1(Parser parser)
-			{
-			}
-			
-			public override bool Scan(IScanner scanner)
+			public override bool Scan(Scanner scanner)
 			{
 				if (!scanner.KeepScanning)
 					return true;
@@ -3977,20 +2621,20 @@ namespace CSharpCodeParser
 				return true;
 			}
 			
-			public override Node Parse(IScanner scanner)
+			public override Node Parse(Scanner scanner)
 			{
 				if (!lookahead.Matches(scanner.Current.tokenId))
 				{
-					scanner.SyntaxErrorExpected(lookahead);
+					//scanner.SyntaxErrorExpected(lookahead);
 					return this;
 				}
 				
 				scanner.CurrentParseTreeNode.AddToken(scanner).grammarNode = this;
 				scanner.MoveNext();
-				if (scanner.ErrorMessage == null)
+				//if (scanner.ErrorMessage == null)
 				{
-					scanner.ErrorParseTreeNode = scanner.CurrentParseTreeNode;
-					scanner.ErrorGrammarNode = scanner.CurrentGrammarNode;
+					//scanner.ErrorParseTreeNode = scanner.CurrentParseTreeNode;
+					//scanner.ErrorGrammarNode = scanner.CurrentGrammarNode;
 				}
 				
 				return parent.NextAfterChild(this, scanner);
@@ -4075,13 +2719,6 @@ namespace CSharpCodeParser
 				
 				SetLookahead(this);
 				SetFollow(this, null);
-				CheckLL1(this);
-				
-				//var sb = new StringBuilder();
-				//foreach (var rule in rules)
-				//    if (rule.lookahead.Matches(FlipbookGames.ScriptInspector2.CsGrammar.Instance.tokenIdentifier))
-				//        sb.AppendLine("Lookahead(" + rule.GetNt() + "): " + rule.lookahead.ToString(this));
-				//UnityEngine.Debug.Log(sb.ToString());
 			}
 			
 			public override TokenSet SetLookahead(Parser parser)
@@ -4108,23 +2745,17 @@ namespace CSharpCodeParser
 				return null;
 			}
 			
-			public override void CheckLL1(Parser parser)
-			{
-				foreach (var rule in rules)
-					rule.CheckLL1(this);
-			}
-			
-			public override bool Scan(IScanner scanner)
+			public override bool Scan(Scanner scanner)
 			{
 				throw new InvalidOperationException();
 			}
 			
-			public override Node Parse(IScanner scanner)
+			public override Node Parse(Scanner scanner)
 			{
 				throw new InvalidOperationException();
 			}
 			
-			public ParseTree ParseAll(IScanner scanner)
+			public ParseTree ParseAll(Scanner scanner)
 			{
 				if (!scanner.MoveNext())
 					return null;
@@ -4136,178 +2767,30 @@ namespace CSharpCodeParser
 				Start.parent = rootId;
 				scanner.CurrentParseTreeNode = parseTree.root = new ParseTree.Node(rootId);
 				scanner.CurrentGrammarNode = Start.Parse(scanner);
-				
-				scanner.ErrorParseTreeNode = scanner.CurrentParseTreeNode;
-				scanner.ErrorGrammarNode = scanner.CurrentGrammarNode;
-				
+
 				while (scanner.CurrentGrammarNode != null)
 					if (!ParseStep(scanner))
 						break;
-				
-				//if (scanner.MoveNext())
-				//	Debug.LogWarning(scanner + ": trash at end");
+
 				return parseTree;
 			}
 			
-			public bool ParseStep(IScanner scanner)
+			public bool ParseStep(Scanner scanner)
 			{
-				//			if (scanner.ErrorMessage == null && scanner.ErrorParseTreeNode == null)
-				//			{
-				//				scanner.ErrorParseTreeNode = scanner.CurrentParseTreeNode;
-				//				scanner.ErrorGrammarNode = scanner.CurrentGrammarNode;
-				//			}
-				
-				//scanner.CurrentParseTreeNode.AddToken(scanner).grammarNode = this;
-				//scanner.MoveNext();
-				
-				//return parent.NextAfterChild(this, scanner);
 				
 				if (scanner.CurrentGrammarNode == null)
 					return false;
-				
-				//var errorGrammarNode = scanner.CurrentGrammarNode;
-				//var errorParseTreeNode = scanner.CurrentParseTreeNode;
-				
-				//var numValidNodes = scanner.CurrentParseTreeNode.numValidNodes;
-				
+
 				var token = scanner.Current;
-				if (scanner.ErrorMessage == null)
+				while (scanner.CurrentGrammarNode != null)
 				{
-					while (scanner.CurrentGrammarNode != null)
-					{
-						scanner.CurrentGrammarNode = scanner.CurrentGrammarNode.Parse(scanner);
-						if (scanner.ErrorMessage != null || token != scanner.Current)
-							break;
-					}
-					
-					//if (scanner.CurrentGrammarNode == null)
-					//{
-					//	Debug.LogError("scanner.CurrentGrammarNode == null");
-					//	return false;
-					//}
-					
-					//if (scanner.ErrorMessage != null)
-					//{
-					//    Debug.Log("ErrorGrammarNode: " + scanner.ErrorGrammarNode +
-					//        "\nErrorParseTreeNode: " + scanner.ErrorParseTreeNode);
-					//}
-					
-					if (scanner.ErrorMessage == null && token != scanner.Current)
-					{
-						scanner.ErrorParseTreeNode = scanner.CurrentParseTreeNode;
-						scanner.ErrorGrammarNode = scanner.CurrentGrammarNode;
-					}
+					scanner.CurrentGrammarNode = scanner.CurrentGrammarNode.Parse(scanner);
+					if ( token != scanner.Current)
+						break;
 				}
-				if (scanner.ErrorMessage != null)
-				{
-					if (token.tokenKind == SyntaxToken.Kind.EOF)
-					{
-						//	Debug.LogError("Unexpected end of file in ParseStep");
-						return false;
-					}
-					
-					var missingParseTreeNode = scanner.CurrentParseTreeNode;
-					var missingGrammarNode = scanner.CurrentGrammarNode;
-					
-					// Rolling back all recent parser state changes
-					scanner.CurrentParseTreeNode = scanner.ErrorParseTreeNode;
-					scanner.CurrentGrammarNode = scanner.ErrorGrammarNode;
-					if (scanner.CurrentParseTreeNode != null)
-					{
-						var cpt = scanner.CurrentParseTreeNode;
-						for (var i = cpt.numValidNodes; i > 0 && !cpt.ChildAt(--i).HasLeafs(); )
-							cpt.InvalidateFrom(i);
-					}
-					
-					if (scanner.CurrentGrammarNode != null)
-					{
-						int numSkipped;
-						scanner.CurrentGrammarNode = scanner.CurrentGrammarNode.Recover(scanner, out numSkipped);
-					}
-					if (scanner.CurrentGrammarNode == null)
-					{
-						if (token.parent != null)
-							token.parent.ReparseToken();
-						//					if (scanner.ErrorToken == null)
-						//						scanner.ErrorToken = scanner.ErrorParseTreeNode.AddToken(scanner);
-						//					else
-						//						scanner.ErrorParseTreeNode.AddToken(scanner);
-						new ParseTree.Leaf(scanner);
-						
-						if (cachedErrorGrammarNode == scanner.ErrorGrammarNode)
-						{
-							token.parent.syntaxError = cachedErrorMessage;
-						}
-						else
-						{
-							token.parent.syntaxError = "Unexpected token! Expected " + scanner.ErrorGrammarNode.lookahead.ToString(this);
-							cachedErrorMessage = token.parent.syntaxError;
-							cachedErrorGrammarNode = scanner.ErrorGrammarNode;
-						}
-						//	scanner.ErrorMessage = cachedErrorMessage;
-						//	Debug.LogError("Skipped " + token + "added to " + token.parent + "\nparent: " + token.parent.parent);
-						
-						
-						scanner.CurrentGrammarNode = scanner.ErrorGrammarNode;
-						scanner.CurrentParseTreeNode = scanner.ErrorParseTreeNode;
-						
-						//	token = scanner.Current;
-						//	token.parent = errorParseTreeNode;
-						
-						//Debug.Log("Skipping " + scanner.Current.tokenKind + " \"" + scanner.Current.text + "\"");
-						if (!scanner.MoveNext())
-						{
-							//	Debug.LogError("Unexpected end of file");
-							return false;
-						}
-						scanner.ErrorMessage = null;
-					}
-					else
-					{
-						//var sb = new StringBuilder();
-						//scanner.CurrentParseTreeNode.Dump(sb, 0);
-						//Debug.Log("Recovered on " + scanner.CurrentGrammarNode + " (current token: " + scanner.Current +
-						//	" at line " + scanner.CurrentLine() + ":" + scanner.CurrentTokenIndex() +
-						//	")" + //"\nnumSkipped: " + numSkipped +
-						//	"\nin parent: " + scanner.CurrentGrammarNode.parent +
-						//	"\nCurrentParseTreeNode is:\n" + sb);
-						
-						//if (scanner.ErrorToken == null)
-						{
-							//var n = scanner.ErrorGrammarNode;
-							//while (n != null && !(n is Id))
-							//    n = n.parent;
-							//scanner.ErrorParseTreeNode.errors = scanner.ErrorParseTreeNode.errors ?? new List<string>();
-							//scanner.ErrorParseTreeNode.errors.Add("Not a valid " + n + "! Expected " + scanner.ErrorGrammarNode.lookahead.ToString(this));
-							
-							if (missingGrammarNode != null && missingParseTreeNode != null)
-							{
-								scanner.CurrentParseTreeNode = missingParseTreeNode;
-								scanner.CurrentGrammarNode = missingGrammarNode;
-							}
-							
-							scanner.InsertMissingToken(scanner.ErrorMessage
-							                           ?? ("Expected " + missingGrammarNode.lookahead.ToString(this)));
-							
-							if (missingGrammarNode != null && missingParseTreeNode != null)
-							{
-								scanner.ErrorMessage = null;
-								scanner.ErrorToken = null;
-								scanner.CurrentParseTreeNode = missingParseTreeNode;
-								scanner.CurrentGrammarNode = missingGrammarNode;
-								scanner.CurrentGrammarNode = missingGrammarNode.parent.NextAfterChild(missingGrammarNode, scanner);
-							}
-						}
-						scanner.ErrorMessage = null;
-						scanner.ErrorToken = null;
-					}
-				}
-				
+
 				return true;
 			}
-			
-			private static string cachedErrorMessage;
-			private static Node cachedErrorGrammarNode;
 			
 			public override string ToString()
 			{
@@ -4452,16 +2935,7 @@ namespace CSharpCodeParser
 				return lookahead;
 			}
 			
-			public override void CheckLL1(Parser parser)
-			{
-				if (!contextualKeyword)
-				{
-					base.CheckLL1(parser);
-					rhs.CheckLL1(parser);
-				}
-			}
-			
-			public override bool Scan(IScanner scanner)
+			public override bool Scan(Scanner scanner)
 			{
 				if (!scanner.KeepScanning)
 					return true;
@@ -4474,12 +2948,12 @@ namespace CSharpCodeParser
 				return true;
 			}
 			
-			public override Node Parse(IScanner scanner)
+			public override Node Parse(Scanner scanner)
 			{
 				return RhsParse2(scanner);
 			}
 			
-			public override Node NextAfterChild(Node child, IScanner scanner)
+			public override Node NextAfterChild(Node child, Scanner scanner)
 			{
 				var temp = scanner.CurrentParseTreeNode;
 				if (temp == null)
@@ -4495,41 +2969,25 @@ namespace CSharpCodeParser
 					token.tokenKind = SyntaxToken.Kind.ContextualKeyword;
 				}
 				
-				/*if (autoExclude && temp.numValidNodes == 1)
+				if (temp.semantics != SemanticFlags.None)
 				{
-					temp.Exclude();
-				}
-				else*/ if (temp.semantics != SemanticFlags.None)
-				{
-					scanner.OnReduceSemanticNode(temp);
+					//scanner.OnReduceSemanticNode(temp);
 				}
 				else
 				{
-					temp.Reduce();
+					//temp.Reduce();
 				}
 				
 				return res;
 			}
 			
-			private Node RhsParse2(IScanner scanner)
+			private Node RhsParse2(Scanner scanner)
 			{
-				bool wasError = scanner.ErrorMessage != null;
+				bool wasError = false;//scanner.ErrorMessage != null;
 				Node res = null;
 				if (lookahead.Matches(scanner.Current))
 				{
-					//try
-					//{
 					res = rhs.Parse(scanner);
-					//}
-					//catch (Exception e)
-					//{
-					//	throw new Exception(e.Message + "<=" + this.nt, e);
-					//}
-				}
-				if ((res == null || !wasError && scanner.ErrorMessage != null) && !lookahead.MatchesEmpty())
-				{
-					scanner.SyntaxErrorExpected(lookahead);
-					return res ?? this;
 				}
 				if (res != null)
 					return res;
@@ -4834,9 +3292,19 @@ namespace CSharpCodeParser
 			}
 		}
 		
-		public abstract int TokenToId(string s);
+		public int TokenToId(string s)
+		{
+			int id = parser.TokenToId(s);
+			if (id < 0)
+				id = tokenIdentifier; // parser.TokenToId("IDENTIFIER");
+			//Debug.Log("TokenToId(\"" + tokenText + "\") => " + id);
+			return id;
+		}
 		
-		public abstract string GetToken(int tokenId);
+		public string GetToken(int tokenId)
+		{
+			return parser.GetToken(tokenId);
+		}
 	}
 
 	public static class CsGrammarExtensions
